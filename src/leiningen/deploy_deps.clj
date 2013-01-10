@@ -18,24 +18,6 @@
         :else message))
 
 
-(defn snapshot-jar? [jar-file]
-  (re-find #"SNAPSHOT" (.getName jar-file)))
-
-;;TODO: is this logic already available in leiningen.core?
-(defn- default-repo-name [jar-file]
-  (if (snapshot-jar? jar-file)
-    "snapshots"
-    "releases"))
-
-(defn repo-for
-  "Returns the repository for project matching repository-name (if
-  given) or the correct default repository for the jar-file (if
-  given). Otherwise returns nil."
-  [project {:keys [jar-file repository-name]}]
-  (cond repository-name (deploy/repo-for project repository-name)
-        jar-file (deploy/repo-for project (default-repo-name jar-file))))
-
-
 ;; Alias get-dependencies because it is priavte...
 (def get-dependencies #'leiningen.core.classpath/get-dependencies)
 
@@ -68,6 +50,7 @@
 ;; and avoid returning nil settings.
 ;; TODO: create a pull request for this!
 (defn add-auth-interactively [[id settings]]
+  (main/debug "auth id and settings:" (pr-str [id settings]))
   (if (or (and (:username settings) (some settings [:password :passphrase :private-key-file]))
           (.startsWith (:url settings) "file:/"))
     [id settings]
@@ -81,20 +64,42 @@
         [id (assoc settings :username username :password password)]))))
 
 
+(defn- snapshot? [{:keys [jar-file]}]
+  (re-find #"SNAPSHOT" (.getName jar-file)))
+
 (defn deploy-deps
-  "Deploy project dependencies to a remote repository."
-  [project & [repository-name]]
-  (with-redefs [deploy/add-auth-interactively add-auth-interactively]
-    (let [repo (repo-for project {:repository-name repository-name})]
-      (try
-        (doseq [files (files-for project)]
-          (let [repo (or repo (repo-for project files))]
-            (main/debug "Deploying" files "to" repo)
-            (apply aether/deploy
-                   (apply concat
-                          [:transfer-listener :stdout
-                           :repository [repo]]
-                          files))))
-        (catch org.sonatype.aether.deployment.DeploymentException e
-          (when main/*debug* (.printStackTrace e))
-          (main/abort (abort-message (.getMessage e))))))))
+  "Deploy project dependencies to a remote repository.
+
+The target repository for each dependency will be looked up in :repositories in
+project.clj:
+
+  :repositories [[\"snapshots\" \"https://internal.repo/snapshots\"]
+                 [\"releases\" \"https://internal.repo/releases\"]
+                 [\"alternate\" \"https://other.server/repo\"]]
+
+If you don't provide releases and snapshots repository names to deploy to,
+either \"snapshots\" or \"releases\" will be used for each dependency depending
+on the specified version. See `lein help deploying` under \"Authentication\" for
+instructions on how to configure your credentials so you are not prompted on
+each deploy."
+  ([project releases-repository-name snapshots-repository-name]
+     (with-redefs [deploy/add-auth-interactively add-auth-interactively]
+       (let [releases-repo (delay (deploy/repo-for project releases-repository-name))
+             snapshots-repo (delay (deploy/repo-for project snapshots-repository-name))]
+         (try
+           (doseq [files (files-for project)]
+             (let [repo (if (snapshot? files)
+                          @snapshots-repo
+                          @releases-repo)]
+               (main/debug "Deploying" files "to" repo)
+               (apply aether/deploy
+                      (apply concat
+                             [:transfer-listener :stdout
+                              :repository [repo]]
+                             files))))
+           (catch org.sonatype.aether.deployment.DeploymentException e
+             (when main/*debug* (.printStackTrace e))
+             (main/abort (abort-message (.getMessage e))))))))
+  ([project releases-repository-name]
+     (deploy-deps project releases-repository-name "snapshots"))
+  ([project] (deploy-deps project "releases" "snapshots")))
