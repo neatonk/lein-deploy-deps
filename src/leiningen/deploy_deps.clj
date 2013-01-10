@@ -1,9 +1,11 @@
 (ns leiningen.deploy-deps
   (:require [cemerick.pomegranate.aether :as aether]
             [leiningen.core.classpath :as classpath]
+            [leiningen.core.project :as project]
             [leiningen.core.main :as main]
-            [leiningen.deploy :refer (repo-for)]
-            [clojure.java.io :refer (file)]
+            [leiningen.deploy :as deploy]
+            [leiningen.jar :as jar]
+            [clojure.java.io :as io]
             [clojure.string :as str]))
 
 ;; borrowed from leiningen.deploy
@@ -16,69 +18,44 @@
         :else message))
 
 
-;; alias get-dependencies because it is priavte...
+;; Alias get-dependencies because it is priavte...
 (def get-dependencies #'leiningen.core.classpath/get-dependencies)
 
-(defn dependency-objs [graph]
-  (->> graph keys (map (comp :dependency meta)) (remove nil?)))
-
 (defn deps-for [project]
-  (->> (get-dependencies :dependencies project)
-       (dependency-objs)))
+  (keys (get-dependencies :dependencies project)))
 
-
-(defn jars-for [deps]
-  (->> (map #(.getFile (.getArtifact %)) deps)
-       (filter #(re-find #"\.jar$" (.getName %)))))
-
-
-(defn- pom-file [^java.io.File jar]
-  (file (.getParent jar) (str/replace (.getName jar) #"\.jar" ".pom")))
+(defn jars-for [deps] (map (comp :file meta) deps))
 
 (defn poms-for [jars]
-  (->> (map pom-file jars)
-       (filter #(.exists %))))
+  (map #(io/file (.getParent %) (str/replace (.getName %) #"\.jar" ".pom"))
+       jars))
 
 
-(defn- dependency-coords [dep]
-  (let [art (.getArtifact dep)]
-   {:group (.getGroupId art)
-    :artifact (.getArtifactId art)
-    :version (.getVersion art)
-    :classifier (.getClassifier art)
-    :extension (.getExtension art)}))
-
-(defn- lein-coords
-  [{:keys [group artifact version classifier extenstion] :as opts}]
-  [(symbol group artifact) version (select-keys opts [:classifier :extension])])
-
-;; Use opts to override fields
-(defn coords-for [deps & [opts]]
-  (->> (map dependency-coords deps)
-       (map #(merge % opts))
-       (map lein-coords)))
-
-
-(defn files-for [project]
+(defn files-for
+  "Returns a lazy seq of dependency file info as kvs ready for deploy."
+  [project]
   (let [deps (deps-for project)
-        jars (jars-for deps)
+        jars (map (comp :file meta) deps)
         poms (poms-for jars)]
     (assert (= (count deps) (count jars) (count poms)))
-    (merge (zipmap (coords-for deps {:extension "jar"}) jars)
-           (zipmap (coords-for deps {:extension "pom"}) poms))))
-
+    (map (fn [dep jar pom]
+           [:coordinates dep
+            :jar-file jar
+            :pom-file pom])
+         deps jars poms)))
 
 (defn deploy-deps
   "Deploy project dependencies to a remote repository."
   [project & [repository-name]]
-  (let [repo (repo-for project repository-name)
-        files (files-for project)]
+  (let [repo (deploy/repo-for project repository-name)]
+    (main/debug "Deploying deps for" (pr-str project) "to" (pr-str repo))
     (try
-      (main/debug "Deploying" files "to" repo)
-      (aether/deploy-artifacts :artifacts (keys files)
-                               :files files
-                               :transfer-listener :stdout
-                               :repository [repo])
+      (doseq [files (files-for project)]
+        (main/debug "Deploying" files "to" repo)
+        (apply aether/deploy
+               :transfer-listener :stdout
+               :repository [repo]
+               files))
       (catch org.sonatype.aether.deployment.DeploymentException e
         (when main/*debug* (.printStackTrace e))
         (main/abort (abort-message (.getMessage e)))))))
