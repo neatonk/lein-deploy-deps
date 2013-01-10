@@ -97,7 +97,7 @@
            :dependencies '[[org.clojure/clojure "1.5.0-master-SNAPSHOT"]
                            [org.clojure/core.cache "0.6.2"]]}]
 
-     (testing "w/ NO repository-name specified..."
+     (testing "w/ NO repository-name's specified..."
        (let [snapshots-uri (tmp-repo)
              releases-uri (tmp-repo)
              proj (merge project
@@ -117,7 +117,7 @@
          (is (re-find #"org/clojure/core.cache/0.6.2/" (str (first releases-jars)))
              "Release jars deployed to releases repo by default")))
 
-     (testing "w/ 'releases' repository-name specified..."
+     (testing "w/ releases-repository-name specified..."
        (let [snapshots-uri (tmp-repo)
              releases-uri (tmp-repo)
              proj (merge project
@@ -129,8 +129,29 @@
 
          (deploy-deps proj "releases")
 
-         (is (= (count snapshots-jars) 0)
-             "No snapshot jars deployed")
+         (is (and (= (count snapshots-jars) 1)
+                  (re-find #"org/clojure/clojure/1.5.0-master-SNAPSHOT/" (str (first snapshots-jars))))
+             "Snapshot jars deployed to snapshots repo by default")
+
+         (is (= (count releases-jars) 1))
+         (is (re-find #"org/clojure/core.cache/0.6.2/" (str (first releases-jars)))
+             "Release jars deployed to releases repo")))
+
+     (testing "w/ releasesand snapshots repository-name's specified..."
+       (let [snapshots-uri (tmp-repo)
+             releases-uri (tmp-repo)
+             proj (merge project
+                         {:deploy-repositories
+                          [["snapshots" {:url (str snapshots-uri) :snapshots true}]
+                           ["releases" {:url (str releases-uri) :snapshots false}]]})
+             snapshots-jars (deployed-jars snapshots-uri)
+             releases-jars (deployed-jars releases-uri)]
+
+         (deploy-deps proj "releases" "snapshots")
+
+         (is (and (= (count snapshots-jars) 1)
+                  (re-find #"org/clojure/clojure/1.5.0-master-SNAPSHOT/" (str (first snapshots-jars))))
+             "Snapshot jars deployed to snapshots")
 
          (is (= (count releases-jars) 1))
          (is (re-find #"org/clojure/core.cache/0.6.2/" (str (first releases-jars)))
