@@ -47,7 +47,7 @@
 
 
 ;; Copied from leiningen.deploy source to fix detection of file uri's
-;; and avoid returning nil settings.
+;; and to provide a passphrase if needed
 ;; TODO: create a pull request for this!
 (defn add-auth-interactively [[id settings]]
   (main/debug "auth id and settings:" (pr-str [id settings]))
@@ -60,8 +60,11 @@
       (print "Username: ") (flush)
       (let [username (read-line)
             password (.readPassword (System/console) "%s"
-                                    (into-array ["Password: "]))]
-        [id (assoc settings :username username :password password)]))))
+                                    (into-array ["Password or Passphrase: "]))]
+        [id (assoc settings
+              :username username
+              :password password
+              :passphrase password)]))))
 
 
 (defn- snapshot? [{:keys [jar-file]}]
