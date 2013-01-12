@@ -35,7 +35,7 @@
   "Returns a lazy seq of dependency file maps ready for deploy."
   [project]
   (let [deps (deps-for project)
-        jars (map (comp :file meta) deps)
+        jars (jars-for deps)
         poms (poms-for jars)]
     (main/debug "Dependencies for: " project "\n\n" deps)
     (assert (not-any? nil? (concat deps jars poms)))
@@ -73,8 +73,8 @@
 (defn deploy-deps
   "Deploy project dependencies to a remote repository.
 
-The target repository for each dependency will be looked up in :repositories in
-project.clj:
+The target repository for each dependency will be looked up in :repositories
+and :deploy-repositories in project.clj:
 
   :repositories [[\"snapshots\" \"https://internal.repo/snapshots\"]
                  [\"releases\" \"https://internal.repo/releases\"]
