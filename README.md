@@ -38,8 +38,8 @@ something like this:
 OR
 
 ```clojure
-{repositories [["snapshots" {:url "https://your-repo.org/snapshots"}]
-               ["releases" {:url "https://your-repo.org/releases"}]]}
+{:repositories [["snapshots" {:url "https://your-repo.org/snapshots"}]
+                ["releases" {:url "https://your-repo.org/releases"}]]}
 ```
 
 You can use any repository that you've set up in your `project.clj`. For
