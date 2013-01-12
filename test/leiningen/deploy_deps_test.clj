@@ -69,23 +69,47 @@
 
 ;; Test
 
-(deftest deploy-deps-test
-  (let [repo-name "releases"
-        repo-uri (tmp-repo)
-        proj (dummy-project
-              {:deploy-repositories [[repo-name {:url (str repo-uri)}]]
-               :dependencies '[[org.clojure/clojure "1.4.0"]]
-               :root (tmp-proj)})
-        proj-jars (resolve-deps proj)
-        repo-jars (deployed-jars repo-uri)
-        repo-poms (deployed-poms repo-uri)]
-    (main/debug "Deploying deps for" (pr-str proj) "to" repo-name)
-    (deploy-deps proj repo-name)
+(deftest deploy-deps-basic-test
+  (testing "single dependency..."
+    (let [repo-name "releases"
+         repo-uri (tmp-repo)
+         proj (dummy-project
+               {:deploy-repositories [[repo-name {:url (str repo-uri)}]]
+                :dependencies '[[org.clojure/clojure "1.4.0"]]
+                :root (tmp-proj)})
+         proj-jars (resolve-deps proj)
+         repo-jars (deployed-jars repo-uri)
+         repo-poms (deployed-poms repo-uri)]
+     (main/debug "Deploying deps for" (pr-str proj) "to" repo-name)
+     (deploy-deps proj repo-name)
 
-    (is (= (set (map common-name proj-jars))
-           (set (map common-name repo-jars)))
-        "All jars were deployed")
+     (is (= 1 (count proj-jars)))
+     (is (= (set (map common-name proj-jars))
+            (set (map common-name repo-jars)))
+         "All jars were deployed")
 
-    (is (= (set (map common-name proj-jars))
-           (set (map common-name repo-poms)))
-        "All poms were deployed")))
+     (is (= (set (map common-name proj-jars))
+            (set (map common-name repo-poms)))
+         "All poms were deployed")))
+
+  (testing "transitive dependencies..."
+    (let [repo-name "releases"
+         repo-uri (tmp-repo)
+         proj (dummy-project
+               {:deploy-repositories [[repo-name {:url (str repo-uri)}]]
+                :dependencies '[[clj-http "0.6.3"]]
+                :root (tmp-proj)})
+         proj-jars (resolve-deps proj)
+         repo-jars (deployed-jars repo-uri)
+         repo-poms (deployed-poms repo-uri)]
+     (main/debug "Deploying deps for" (pr-str proj) "to" repo-name)
+     (deploy-deps proj repo-name)
+
+     (is (< 1 (count proj-jars)))
+     (is (= (set (map common-name proj-jars))
+            (set (map common-name repo-jars)))
+         "All jars were deployed")
+
+     (is (= (set (map common-name proj-jars))
+            (set (map common-name repo-poms)))
+         "All poms were deployed"))))
